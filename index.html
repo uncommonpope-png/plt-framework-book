@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PLT Framework - The Calculation: 3D Interactive Book</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Georgia', serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 18px;
+            border-radius: 30px;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+            z-index: 10;
+            font-size: 14px;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+        #controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255,255,255,0.7);
+            background: rgba(0,0,0,0.5);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            pointer-events: none;
+            font-family: monospace;
+            z-index: 10;
+        }
+        #page-counter {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.6);
+            color: #ffd966;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: bold;
+            pointer-events: none;
+            font-family: monospace;
+            z-index: 10;
+            backdrop-filter: blur(4px);
+        }
+        @media (max-width: 600px) {
+            #info, #controls-hint, #page-counter { font-size: 10px; padding: 4px 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        📖 THE CALCULATION · Profit · Love · Tax
+    </div>
+    <div id="controls-hint">
+        🖱️ Click + Drag: Grab & Lift Book | ← → : Turn Pages
+    </div>
+    <div id="page-counter">
+        Page <span id="current-page">1</span> / <span id="total-pages">5</span>
+    </div>
+
+    <!-- Import Three.js core and add-ons -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // --- Setup Scene, Cameras, Renderers ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a2a);
+        scene.fog = new THREE.FogExp2(0x0a0a2a, 0.008);
+
+        // Perspective Camera
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(4, 2.5, 5);
+        camera.lookAt(0, 0.5, 0);
+
+        // WebGL Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // CSS2DRenderer for text labels on pages
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0x404060);
+        scene.add(ambientLight);
+        const mainLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
+        mainLight.position.set(5, 10, 3);
+        mainLight.castShadow = true;
+        mainLight.receiveShadow = false;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        scene.add(mainLight);
+        const fillLight = new THREE.PointLight(0x4466cc, 0.3);
+        fillLight.position.set(0, -1, 1);
+        scene.add(fillLight);
+        const rimLight = new THREE.PointLight(0xffaa66, 0.5);
+        rimLight.position.set(-2, 1.5, -2);
+        scene.add(rimLight);
+        const warmFill = new THREE.PointLight(0xffaa77, 0.4);
+        warmFill.position.set(2, 1, 2);
+        scene.add(warmFill);
+
+        // Grid floor
+        const gridHelper = new THREE.GridHelper(15, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -0.8;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.25;
+        scene.add(gridHelper);
+        
+        // Reflective plane under book
+        const planeMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.4, metalness: 0.7, transparent: true, opacity: 0.4 });
+        const groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), planeMat);
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.position.y = -0.75;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+
+        // --- Create Book Group ---
+        const bookGroup = new THREE.Group();
+        scene.add(bookGroup);
+
+        // Book dimensions
+        const coverWidth = 1.8;
+        const coverHeight = 2.4;
+        const totalThickness = 0.32;
+        const pageThickness = 0.05;
+        const numPages = 5;
+        
+        const coverColor = 0x3a2a1f;
+        const pageColor = 0xfaf3e0;
+        
+        // Front Cover
+        const frontCoverMat = new THREE.MeshStandardMaterial({ color: coverColor, roughness: 0.3, metalness: 0.1, emissive: 0x221100 });
+        const frontCover = new THREE.Mesh(new THREE.BoxGeometry(coverWidth, coverHeight, 0.04), frontCoverMat);
+        frontCover.castShadow = true;
+        frontCover.receiveShadow = false;
+        frontCover.position.set(0, 0, totalThickness/2);
+        bookGroup.add(frontCover);
+        
+        // Spine
+        const spineMat = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.2 });
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(0.12, coverHeight, totalThickness), spineMat);
+        spine.position.set(-coverWidth/2 - 0.03, 0, 0);
+        bookGroup.add(spine);
+        
+        // Back Cover
+        const backCover = new THREE.Mesh(new THREE.BoxGeometry(coverWidth, coverHeight, 0.04), frontCoverMat);
+        backCover.position.set(0, 0, -totalThickness/2);
+        backCover.castShadow = true;
+        bookGroup.add(backCover);
+        
+        // Pages
+        const pages = [];
+        const pagePositions = [];
+        for (let i = 0; i < numPages; i++) {
+            const zOffset = -totalThickness/2 + 0.04 + (i * pageThickness) + pageThickness/2;
+            const pageMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(coverWidth - 0.08, coverHeight - 0.12, pageThickness),
+                new THREE.MeshStandardMaterial({ color: pageColor, roughness: 0.5, emissive: 0xeeddcc, emissiveIntensity: 0.1 })
+            );
+            pageMesh.castShadow = true;
+            pageMesh.position.set(0, 0, zOffset);
+            bookGroup.add(pageMesh);
+            pages.push(pageMesh);
+            pagePositions.push(zOffset);
+        }
+        
+        // CSS2D Content
+        const pageContents = [
+            { title: "THE CALCULATION", subtitle: "Profit · Love · Tax", body: "The hidden equation behind every decision. Craig Jones · Little Bunny" },
+            { title: "The Hidden Equation", subtitle: "RCC 001-005", body: "Every decision is a three-part equation. Most people solve for one variable. Profit: what you gain. Love: trust & identity. Tax: actual cost." },
+            { title: "The Price of Free", subtitle: "RCC 006-010", body: "Nothing without a cost is free. It is deferred Tax. Free entry means someone else set the price. Deferred Tax accrues interest." },
+            { title: "Comfort Debt", subtitle: "RCC 011-015", body: "Comfort compounds into regret. Stagnation is not neutral — it's negative dressed in familiar clothes. Every year you stay in the wrong place is a year lost." },
+            { title: "The Love Ledger", subtitle: "RCC 016-020", body: "Trust takes years to build and one decision to destroy. You cannot spend trust you haven't deposited. Love without maintenance becomes debt." }
+        ];
+        
+        const cssLabels = [];
+        pageContents.forEach((content, idx) => {
+            const div = document.createElement('div');
+            div.style.backgroundColor = 'rgba(250, 240, 220, 0.95)';
+            div.style.color = '#2c1a0e';
+            div.style.fontFamily = "'Georgia', 'Times New Roman', serif";
+            div.style.padding = '15px 12px';
+            div.style.borderRadius = '8px';
+            div.style.width = '220px';
+            div.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
+            div.style.border = '1px solid #b89a70';
+            div.style.backdropFilter = 'blur(2px)';
+            div.style.textAlign = 'center';
+            div.style.fontSize = '14px';
+            if (idx === 0) {
+                div.innerHTML = `<h2 style="margin:0 0 8px; font-size:20px; color:#6b3e1c;">${content.title}</h2>
+                                 <h3 style="margin:0 0 8px; font-size:16px; color:#a5592c;">${content.subtitle}</h3>
+                                 <p style="margin:0; font-size:12px; line-height:1.4;">${content.body}</p>
+                                 <div style="margin-top:10px; font-size:10px;">✦ PLT Framework ✦</div>`;
+            } else {
+                div.innerHTML = `<h3 style="margin:0 0 6px; font-size:18px; color:#5a2e12;">${content.title}</h3>
+                                 <p style="margin:0 0 6px; font-size:13px; font-weight:bold; color:#8b5a2b;">${content.subtitle}</p>
+                                 <p style="margin:0; font-size:12px; line-height:1.4;">${content.body}</p>
+                                 <div style="margin-top:8px; font-size:10px;">⬅️ ➡️ turn pages</div>`;
+            }
+            const label = new CSS2DObject(div);
+            const zPos = pagePositions[idx] + 0.03;
+            label.position.set(0, 0.05, zPos);
+            bookGroup.add(label);
+            cssLabels.push(label);
+        });
+        
+        // Gold foil emblem on cover
+        const emblemMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.2 });
+        const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.02), emblemMat);
+        emblem.position.set(0, 0.3, totalThickness/2 + 0.03);
+        bookGroup.add(emblem);
+        
+        // --- Grabbing / Lifting Mechanics ---
+        let isGrabbed = false;
+        let grabOffset = new THREE.Vector3();
+        let originalBookPos = new THREE.Vector3(0, 0.2, 0);
+        bookGroup.position.copy(originalBookPos);
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        function getDragPlanePoint(event) {
+            const planeY = bookGroup.position.y;
+            if (event.touches) {
+                mouse.x = (event.touches[0].clientX / renderer.domElement.clientWidth) * 2 - 1;
+                mouse.y = -(event.touches[0].clientY / renderer.domElement.clientHeight) * 2 + 1;
+            } else {
+                mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+                mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+            }
+            raycaster.setFromCamera(mouse, camera);
+            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), planeY);
+            const targetPoint = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(plane, targetPoint)) {
+                return targetPoint;
+            }
+            return null;
+        }
+        
+        function onPointerDown(event) {
+            event.preventDefault();
+            if (event.touches) {
+                mouse.x = (event.touches[0].clientX / renderer.domElement.clientWidth) * 2 - 1;
+                mouse.y = -(event.touches[0].clientY / renderer.domElement.clientHeight) * 2 + 1;
+            } else {
+                mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+                mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+            }
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(bookGroup, true);
+            if (intersects.length > 0) {
+                isGrabbed = true;
+                const hitPoint = intersects[0].point;
+                grabOffset = bookGroup.position.clone().sub(hitPoint);
+                renderer.domElement.style.cursor = 'grabbing';
+                bookGroup.scale.set(1.02, 1.02, 1.02);
+            }
+        }
+        
+        function onPointerMove(event) {
+            if (!isGrabbed) return;
+            event.preventDefault();
+            const planePoint = getDragPlanePoint(event);
+            if (planePoint) {
+                const newPos = planePoint.clone().add(grabOffset);
+                newPos.y = Math.min(1.2, Math.max(-0.2, newPos.y));
+                bookGroup.position.copy(newPos);
+            }
+        }
+        
+        function onPointerUp(event) {
+            if (isGrabbed) {
+                isGrabbed = false;
+                renderer.domElement.style.cursor = 'default';
+                bookGroup.scale.set(1, 1, 1);
+            }
+        }
+        
+        renderer.domElement.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('mouseup', onPointerUp);
+        renderer.domElement.addEventListener('touchstart', onPointerDown);
+        window.addEventListener('touchmove', onPointerMove);
+        window.addEventListener('touchend', onPointerUp);
+        
+        // --- Page Turning ---
+        let currentPageIndex = 0;
+        const totalPageCount = pageContents.length;
+        
+        function updatePageVisibility() {
+            for (let i = 0; i < cssLabels.length; i++) {
+                cssLabels[i].visible = (i === currentPageIndex);
+            }
+            for (let i = 0; i < pages.length; i++) {
+                pages[i].material.emissiveIntensity = (i === currentPageIndex) ? 0.15 : 0.02;
+            }
+            document.getElementById('current-page').innerText = (currentPageIndex + 1).toString();
+        }
+        
+        function turnPage(direction) {
+            let newIndex = currentPageIndex + direction;
+            if (newIndex < 0 || newIndex >= totalPageCount) return;
+            const originalRot = bookGroup.rotation.x;
+            bookGroup.rotation.x = originalRot + (direction === 1 ? -0.08 : 0.08);
+            setTimeout(() => {
+                bookGroup.rotation.x = originalRot;
+            }, 100);
+            bookGroup.scale.set(1.02, 1.02, 1.02);
+            setTimeout(() => {
+                if (!isGrabbed) bookGroup.scale.set(1, 1, 1);
+            }, 120);
+            currentPageIndex = newIndex;
+            updatePageVisibility();
+        }
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                turnPage(-1);
+                e.preventDefault();
+            } else if (e.key === 'ArrowRight') {
+                turnPage(1);
+                e.preventDefault();
+            }
+        });
+        
+        // Prev/Next buttons
+        const leftBtn = document.createElement('button');
+        leftBtn.innerHTML = '◀ Prev';
+        leftBtn.style.position = 'absolute';
+        leftBtn.style.bottom = '80px';
+        leftBtn.style.left = '20px';
+        leftBtn.style.padding = '12px 18px';
+        leftBtn.style.background = '#2c1e12';
+        leftBtn.style.color = '#efdba1';
+        leftBtn.style.border = 'none';
+        leftBtn.style.borderRadius = '40px';
+        leftBtn.style.fontWeight = 'bold';
+        leftBtn.style.cursor = 'pointer';
+        leftBtn.style.zIndex = '20';
+        leftBtn.style.fontFamily = 'monospace';
+        leftBtn.style.fontSize = '14px';
+        leftBtn.style.backdropFilter = 'blur(5px)';
+        leftBtn.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
+        document.body.appendChild(leftBtn);
+        
+        const rightBtn = document.createElement('button');
+        rightBtn.innerHTML = 'Next ▶';
+        rightBtn.style.position = 'absolute';
+        rightBtn.style.bottom = '80px';
+        rightBtn.style.right = '20px';
+        rightBtn.style.padding = '12px 18px';
+        rightBtn.style.background = '#2c1e12';
+        rightBtn.style.color = '#efdba1';
+        rightBtn.style.border = 'none';
+        rightBtn.style.borderRadius = '40px';
+        rightBtn.style.fontWeight = 'bold';
+        rightBtn.style.cursor = 'pointer';
+        rightBtn.style.zIndex = '20';
+        rightBtn.style.fontFamily = 'monospace';
+        rightBtn.style.fontSize = '14px';
+        rightBtn.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
+        document.body.appendChild(rightBtn);
+        
+        leftBtn.addEventListener('click', () => turnPage(-1));
+        rightBtn.addEventListener('click', () => turnPage(1));
+        
+        // Reset button
+        const resetBtn = document.createElement('button');
+        resetBtn.innerHTML = '📦 Reset Book Position';
+        resetBtn.style.position = 'absolute';
+        resetBtn.style.top = '20px';
+        resetBtn.style.right = '20px';
+        resetBtn.style.padding = '8px 14px';
+        resetBtn.style.background = '#1f1a2e';
+        resetBtn.style.color = '#ffde9e';
+        resetBtn.style.border = '1px solid #ffb347';
+        resetBtn.style.borderRadius = '30px';
+        resetBtn.style.cursor = 'pointer';
+        resetBtn.style.fontSize = '12px';
+        resetBtn.style.zIndex = '20';
+        resetBtn.style.fontFamily = 'sans-serif';
+        document.body.appendChild(resetBtn);
+        resetBtn.addEventListener('click', () => {
+            bookGroup.position.copy(originalBookPos);
+            bookGroup.scale.set(1, 1, 1);
+            bookGroup.rotation.x = 0;
+            bookGroup.rotation.z = 0;
+        });
+        
+        // Scroll to zoom
+        renderer.domElement.addEventListener('wheel', (e) => {
+            const delta = e.deltaY * 0.005;
+            camera.position.z = Math.min(7, Math.max(2.5, camera.position.z + delta));
+            camera.position.x = Math.min(5, Math.max(-2, camera.position.x * (1 + delta*0.2)));
+            e.preventDefault();
+        }, { passive: false });
+        
+        // Initial visibility
+        updatePageVisibility();
+        
+        // Floating particles
+        const particleCount = 400;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            particlePositions[i*3] = (Math.random() - 0.5) * 12;
+            particlePositions[i*3+1] = (Math.random() - 0.5) * 3 + 0.5;
+            particlePositions[i*3+2] = (Math.random() - 0.5) * 10 - 3;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        const particleMat = new THREE.PointsMaterial({ color: 0xffaa66, size: 0.03, transparent: true, opacity: 0.5 });
+        const particles = new THREE.Points(particlesGeometry, particleMat);
+        scene.add(particles);
+        
+        function animateParticles() {
+            particles.rotation.y += 0.002;
+            particles.rotation.x += 0.001;
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+        
+        // --- Render Loop ---
+        function animate() {
+            if (!isGrabbed) {
+                const time = Date.now() * 0.002;
+                if (bookGroup.position.y < 0.25 && bookGroup.position.y > -0.1) {
+                    bookGroup.position.y = originalBookPos.y + Math.sin(time) * 0.003;
+                }
+            }
+            camera.lookAt(bookGroup.position);
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+        animate();
+        
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        bookGroup.rotation.z = -0.03;
+        bookGroup.rotation.x = 0.05;
+        
+        console.log("3D Book Ready — Grab & Lift, Turn Pages!");
+    </script>
+</body>
+</html>
