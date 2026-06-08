@@ -3,71 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>PLT Framework - The Calculation: 3D Interactive Book</title>
+    <title>PLT Framework - The Calculation: Openable 3D Book</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            font-family: 'Segoe UI', 'Georgia', serif;
+            font-family: 'Georgia', serif;
         }
         #info {
             position: absolute;
             top: 20px;
             left: 20px;
-            color: white;
-            background: rgba(0,0,0,0.6);
-            padding: 10px 18px;
-            border-radius: 30px;
-            backdrop-filter: blur(5px);
-            pointer-events: none;
-            z-index: 10;
-            font-size: 14px;
-            letter-spacing: 1px;
-            font-weight: 500;
-        }
-        #controls-hint {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            color: rgba(255,255,255,0.7);
-            background: rgba(0,0,0,0.5);
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            pointer-events: none;
-            font-family: monospace;
-            z-index: 10;
-        }
-        #page-counter {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.7);
             color: #ffd966;
             padding: 8px 16px;
             border-radius: 30px;
             font-size: 14px;
-            font-weight: bold;
             pointer-events: none;
-            font-family: monospace;
             z-index: 10;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(5px);
+            font-weight: bold;
         }
-        @media (max-width: 600px) {
-            #info, #controls-hint, #page-counter { font-size: 10px; padding: 4px 10px; }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            z-index: 20;
+            pointer-events: none;
+        }
+        button {
+            pointer-events: auto;
+            background: #2c1e12;
+            color: #efdba1;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+            transition: transform 0.1s ease;
+        }
+        button:active {
+            transform: scale(0.96);
+        }
+        #page-num {
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-family: monospace;
+            pointer-events: none;
+        }
+        .instruction {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #ccc;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-family: monospace;
+            pointer-events: none;
+            z-index: 10;
+        }
+        @media (max-width: 700px) {
+            button { padding: 6px 12px; font-size: 12px; }
+            #info { font-size: 10px; top: 10px; left: 10px; }
         }
     </style>
 </head>
 <body>
-    <div id="info">
-        📖 THE CALCULATION · Profit · Love · Tax
+    <div id="info">📖 THE CALCULATION · Profit · Love · Tax</div>
+    <div id="controls">
+        <button id="prevBtn">◀ PREV PAGE</button>
+        <div id="page-num">Page 1 / 6</div>
+        <button id="nextBtn">NEXT PAGE ▶</button>
     </div>
-    <div id="controls-hint">
-        🖱️ Click + Drag: Grab & Lift Book | ← → : Turn Pages
-    </div>
-    <div id="page-counter">
-        Page <span id="current-page">1</span> / <span id="total-pages">5</span>
-    </div>
+    <div class="instruction">🖱️ Click + Drag on book to lift & move | 🔄 Scroll to zoom</div>
 
     <!-- Import Three.js core and add-ons -->
     <script type="importmap">
@@ -82,366 +102,363 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-        // --- Setup Scene, Cameras, Renderers ---
+        // --- Setup Scene, Camera, Renderer ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a2a);
         scene.fog = new THREE.FogExp2(0x0a0a2a, 0.008);
 
-        // Perspective Camera
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(4, 2.5, 5);
-        camera.lookAt(0, 0.5, 0);
+        camera.position.set(3.5, 2.2, 4);
+        camera.lookAt(0, 0.2, 0);
 
-        // WebGL Renderer
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        // CSS2DRenderer for text labels on pages
-        const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        labelRenderer.domElement.style.position = 'absolute';
-        labelRenderer.domElement.style.top = '0px';
-        labelRenderer.domElement.style.left = '0px';
-        labelRenderer.domElement.style.pointerEvents = 'none';
-        document.body.appendChild(labelRenderer.domElement);
-
+        // --- Controls for camera (zoom/rotate, but we'll also allow book grabbing) ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.zoomSpeed = 1.2;
+        controls.rotateSpeed = 1.0;
+        controls.enableZoom = true;
+        controls.enablePan = true;
+        controls.panSpeed = 0.8;
+        
         // --- Lighting ---
-        const ambientLight = new THREE.AmbientLight(0x404060);
-        scene.add(ambientLight);
+        const ambient = new THREE.AmbientLight(0x404060);
+        scene.add(ambient);
         const mainLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
-        mainLight.position.set(5, 10, 3);
+        mainLight.position.set(4, 5, 3);
         mainLight.castShadow = true;
         mainLight.receiveShadow = false;
-        mainLight.shadow.mapSize.width = 1024;
-        mainLight.shadow.mapSize.height = 1024;
         scene.add(mainLight);
-        const fillLight = new THREE.PointLight(0x4466cc, 0.3);
-        fillLight.position.set(0, -1, 1);
+        const fillLight = new THREE.PointLight(0x5577aa, 0.4);
+        fillLight.position.set(1, 1, 2);
         scene.add(fillLight);
-        const rimLight = new THREE.PointLight(0xffaa66, 0.5);
-        rimLight.position.set(-2, 1.5, -2);
-        scene.add(rimLight);
-        const warmFill = new THREE.PointLight(0xffaa77, 0.4);
-        warmFill.position.set(2, 1, 2);
-        scene.add(warmFill);
-
-        // Grid floor
-        const gridHelper = new THREE.GridHelper(15, 20, 0x88aaff, 0x335588);
-        gridHelper.position.y = -0.8;
+        const backLight = new THREE.PointLight(0xffaa66, 0.3);
+        backLight.position.set(-1, 1.5, -2);
+        scene.add(backLight);
+        const groundLight = new THREE.PointLight(0x88aaff, 0.2);
+        groundLight.position.set(0, -0.5, 0);
+        scene.add(groundLight);
+        
+        // Decorative floor grid
+        const gridHelper = new THREE.GridHelper(12, 20, 0x88aaff, 0x335588);
+        gridHelper.position.y = -0.6;
         gridHelper.material.transparent = true;
         gridHelper.material.opacity = 0.25;
         scene.add(gridHelper);
         
-        // Reflective plane under book
-        const planeMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.4, metalness: 0.7, transparent: true, opacity: 0.4 });
-        const groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), planeMat);
-        groundPlane.rotation.x = -Math.PI / 2;
-        groundPlane.position.y = -0.75;
-        groundPlane.receiveShadow = true;
-        scene.add(groundPlane);
-
-        // --- Create Book Group ---
+        // --- Book Group (the whole object we can grab and lift) ---
         const bookGroup = new THREE.Group();
         scene.add(bookGroup);
-
+        bookGroup.position.set(0, 0.1, 0);
+        
         // Book dimensions
-        const coverWidth = 1.8;
-        const coverHeight = 2.4;
-        const totalThickness = 0.32;
-        const pageThickness = 0.05;
-        const numPages = 5;
+        const coverW = 2.2;
+        const coverH = 2.8;
+        const spineW = 0.18;
+        const pageThickness = 0.025;
+        const numPages = 6;
         
-        const coverColor = 0x3a2a1f;
-        const pageColor = 0xfaf3e0;
+        // Materials
+        const coverMat = new THREE.MeshStandardMaterial({ color: 0x3a281a, roughness: 0.4, metalness: 0.1 });
         
-        // Front Cover
-        const frontCoverMat = new THREE.MeshStandardMaterial({ color: coverColor, roughness: 0.3, metalness: 0.1, emissive: 0x221100 });
-        const frontCover = new THREE.Mesh(new THREE.BoxGeometry(coverWidth, coverHeight, 0.04), frontCoverMat);
+        // Front cover
+        const frontCover = new THREE.Mesh(new THREE.BoxGeometry(coverW, coverH, 0.08), coverMat);
         frontCover.castShadow = true;
-        frontCover.receiveShadow = false;
-        frontCover.position.set(0, 0, totalThickness/2);
+        frontCover.position.set(0, 0, spineW/2 + 0.04);
         bookGroup.add(frontCover);
         
         // Spine
-        const spineMat = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.2 });
-        const spine = new THREE.Mesh(new THREE.BoxGeometry(0.12, coverHeight, totalThickness), spineMat);
-        spine.position.set(-coverWidth/2 - 0.03, 0, 0);
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(spineW, coverH, 0.12), new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.3 }));
+        spine.position.set(-coverW/2 - spineW/2, 0, 0);
         bookGroup.add(spine);
         
-        // Back Cover
-        const backCover = new THREE.Mesh(new THREE.BoxGeometry(coverWidth, coverHeight, 0.04), frontCoverMat);
-        backCover.position.set(0, 0, -totalThickness/2);
-        backCover.castShadow = true;
+        // Back cover
+        const backCover = new THREE.Mesh(new THREE.BoxGeometry(coverW, coverH, 0.08), coverMat);
+        backCover.position.set(0, 0, -spineW/2 - 0.04);
         bookGroup.add(backCover);
         
-        // Pages
-        const pages = [];
-        const pagePositions = [];
-        for (let i = 0; i < numPages; i++) {
-            const zOffset = -totalThickness/2 + 0.04 + (i * pageThickness) + pageThickness/2;
-            const pageMesh = new THREE.Mesh(
-                new THREE.BoxGeometry(coverWidth - 0.08, coverHeight - 0.12, pageThickness),
-                new THREE.MeshStandardMaterial({ color: pageColor, roughness: 0.5, emissive: 0xeeddcc, emissiveIntensity: 0.1 })
-            );
-            pageMesh.castShadow = true;
-            pageMesh.position.set(0, 0, zOffset);
-            bookGroup.add(pageMesh);
-            pages.push(pageMesh);
-            pagePositions.push(zOffset);
-        }
-        
-        // CSS2D Content
+        // --- Page content ---
         const pageContents = [
-            { title: "THE CALCULATION", subtitle: "Profit · Love · Tax", body: "The hidden equation behind every decision. Craig Jones · Little Bunny" },
-            { title: "The Hidden Equation", subtitle: "RCC 001-005", body: "Every decision is a three-part equation. Most people solve for one variable. Profit: what you gain. Love: trust & identity. Tax: actual cost." },
-            { title: "The Price of Free", subtitle: "RCC 006-010", body: "Nothing without a cost is free. It is deferred Tax. Free entry means someone else set the price. Deferred Tax accrues interest." },
-            { title: "Comfort Debt", subtitle: "RCC 011-015", body: "Comfort compounds into regret. Stagnation is not neutral — it's negative dressed in familiar clothes. Every year you stay in the wrong place is a year lost." },
-            { title: "The Love Ledger", subtitle: "RCC 016-020", body: "Trust takes years to build and one decision to destroy. You cannot spend trust you haven't deposited. Love without maintenance becomes debt." }
+            { title: "THE HIDDEN EQUATION", body: "Every decision is a three-part equation. Most people solve for one variable.\n\nProfit: What you gain.\nLove: Trust, identity, energy.\nTax: What it actually costs.\n\nRCC 001: If it feels free, you missed the Tax.\nRCC 002: One-variable thinking loses.\nRCC 003: Short-term Profit on long-term decision is hope." },
+            { title: "THE PRICE OF FREE", body: "Nothing without a cost is free. It is deferred Tax.\n\nFree entry means someone else set the price and hid it.\nDeferred Tax accrues interest.\n\nEquity is a bet. Work is a cost. Never confuse the two.\n\nWhen someone gives you something free, ask what they purchased." },
+            { title: "COMFORT DEBT", body: "Comfort compounds into regret.\n\nEvery year you stay in the wrong place is a year you don't spend in the right one.\nNot deciding is a decision. The universe completes it for you.\n\nStagnation is not neutral — it is negative dressed in familiar clothes.\n\nRCC 015: The safe choice has a Tax. It is called opportunity cost." },
+            { title: "THE LOVE LEDGER", body: "Trust takes years to build and one decision to destroy.\n\nPeople don't leave over the decision. They leave over what the decision revealed.\nYou cannot spend trust you haven't deposited.\n\nLove without maintenance becomes debt. Debt gets collected.\n\nWhat took years to build can be invoiced in minutes." },
+            { title: "IDENTITY ARITHMETIC", body: "You become what you tolerate. Adjust the tolerance or change the environment.\n\nThe environment you stay in longest becomes the person you become.\nSmall compromises don't feel like loss. They are.\n\nIdentity recovery costs more than identity maintenance.\n\nWho you were before is not who you return to. It is who you rebuild." }
         ];
         
-        const cssLabels = [];
-        pageContents.forEach((content, idx) => {
-            const div = document.createElement('div');
-            div.style.backgroundColor = 'rgba(250, 240, 220, 0.95)';
-            div.style.color = '#2c1a0e';
-            div.style.fontFamily = "'Georgia', 'Times New Roman', serif";
-            div.style.padding = '15px 12px';
-            div.style.borderRadius = '8px';
-            div.style.width = '220px';
-            div.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
-            div.style.border = '1px solid #b89a70';
-            div.style.backdropFilter = 'blur(2px)';
-            div.style.textAlign = 'center';
-            div.style.fontSize = '14px';
-            if (idx === 0) {
-                div.innerHTML = `<h2 style="margin:0 0 8px; font-size:20px; color:#6b3e1c;">${content.title}</h2>
-                                 <h3 style="margin:0 0 8px; font-size:16px; color:#a5592c;">${content.subtitle}</h3>
-                                 <p style="margin:0; font-size:12px; line-height:1.4;">${content.body}</p>
-                                 <div style="margin-top:10px; font-size:10px;">✦ PLT Framework ✦</div>`;
-            } else {
-                div.innerHTML = `<h3 style="margin:0 0 6px; font-size:18px; color:#5a2e12;">${content.title}</h3>
-                                 <p style="margin:0 0 6px; font-size:13px; font-weight:bold; color:#8b5a2b;">${content.subtitle}</p>
-                                 <p style="margin:0; font-size:12px; line-height:1.4;">${content.body}</p>
-                                 <div style="margin-top:8px; font-size:10px;">⬅️ ➡️ turn pages</div>`;
+        function createPageTexture(content, isRightPage = true) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#fdf8ed';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.strokeStyle = '#b97f44';
+            ctx.lineWidth = 20;
+            ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
+            
+            ctx.fillStyle = '#4a2a14';
+            ctx.font = `Bold ${isRightPage ? 64 : 58}px "Georgia", serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(content.title, canvas.width/2, 140);
+            
+            ctx.beginPath();
+            ctx.moveTo(120, 180);
+            ctx.lineTo(canvas.width - 120, 180);
+            ctx.strokeStyle = '#c99a6b';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            
+            ctx.fillStyle = '#2c1a0e';
+            ctx.font = '42px "Georgia", serif';
+            ctx.textAlign = 'left';
+            const maxWidth = canvas.width - 140;
+            const lineHeight = 58;
+            let y = 260;
+            const words = content.body.split(' ');
+            let line = '';
+            for (let i = 0; i < words.length; i++) {
+                const testLine = line + words[i] + ' ';
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && line.length > 0) {
+                    ctx.fillText(line, 70, y);
+                    line = words[i] + ' ';
+                    y += lineHeight;
+                } else {
+                    line = testLine;
+                }
             }
-            const label = new CSS2DObject(div);
-            const zPos = pagePositions[idx] + 0.03;
-            label.position.set(0, 0.05, zPos);
-            bookGroup.add(label);
-            cssLabels.push(label);
-        });
+            ctx.fillText(line, 70, y);
+            
+            ctx.font = '32px monospace';
+            ctx.fillStyle = '#a5713c';
+            ctx.textAlign = 'center';
+            ctx.fillText('✦ PLT FRAMEWORK ✦', canvas.width/2, canvas.height - 60);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
         
-        // Gold foil emblem on cover
-        const emblemMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.2 });
-        const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.02), emblemMat);
-        emblem.position.set(0, 0.3, totalThickness/2 + 0.03);
-        bookGroup.add(emblem);
+        const pageMeshes = [];
+        const pageGroup = new THREE.Group();
+        bookGroup.add(pageGroup);
         
-        // --- Grabbing / Lifting Mechanics ---
-        let isGrabbed = false;
-        let grabOffset = new THREE.Vector3();
-        let originalBookPos = new THREE.Vector3(0, 0.2, 0);
-        bookGroup.position.copy(originalBookPos);
+        const startZ = -spineW/2 - 0.02;
+        for (let i = 0; i < pageContents.length; i++) {
+            const texture = createPageTexture(pageContents[i], true);
+            const material = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.3 });
+            const pageMesh = new THREE.Mesh(new THREE.BoxGeometry(coverW - 0.15, coverH - 0.2, pageThickness), material);
+            pageMesh.castShadow = true;
+            pageMesh.userData = { pageIndex: i, isFlipped: false };
+            pageMesh.position.set(0, 0, startZ + (i * pageThickness) + pageThickness/2);
+            pageGroup.add(pageMesh);
+            pageMeshes.push(pageMesh);
+        }
         
+        // Title page
+        const frontTexture = (() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fdf0df';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#6b3e1c';
+            ctx.font = 'Bold 90px "Georgia", serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('THE', canvas.width/2, 280);
+            ctx.font = 'Bold 110px "Georgia", serif';
+            ctx.fillText('CALCULATION', canvas.width/2, 450);
+            ctx.font = '48px "Georgia", serif';
+            ctx.fillStyle = '#a5612c';
+            ctx.fillText('Profit · Love · Tax', canvas.width/2, 580);
+            ctx.font = '36px monospace';
+            ctx.fillStyle = '#4a2e1a';
+            ctx.fillText('Craig Jones · Little Bunny', canvas.width/2, 720);
+            ctx.font = '28px monospace';
+            ctx.fillStyle = '#8b6946';
+            ctx.fillText('PLT Framework', canvas.width/2, 820);
+            return new THREE.CanvasTexture(canvas);
+        })();
+        const titlePageMat = new THREE.MeshStandardMaterial({ map: frontTexture, side: THREE.DoubleSide });
+        const titlePage = new THREE.Mesh(new THREE.BoxGeometry(coverW - 0.15, coverH - 0.2, pageThickness), titlePageMat);
+        titlePage.position.set(0, 0, startZ + (pageContents.length * pageThickness) + pageThickness/2);
+        pageGroup.add(titlePage);
+        pageMeshes.unshift(titlePage);
+        pageContents.unshift({ title: "Cover", body: "" });
+        
+        let currentPage = 0;
+        const totalPages = pageMeshes.length;
+        
+        function showPage(index) {
+            pageMeshes.forEach((mesh, i) => {
+                mesh.visible = (i === index);
+                if (i === index) {
+                    mesh.material.transparent = false;
+                } else {
+                    mesh.material.transparent = true;
+                    mesh.material.opacity = 0.0;
+                }
+            });
+            document.getElementById('page-num').innerText = `Page ${index+1} / ${totalPages}`;
+        }
+        
+        function flipPage(direction) {
+            let newIndex = currentPage + direction;
+            if (newIndex < 0 || newIndex >= totalPages) return;
+            
+            const currentMesh = pageMeshes[currentPage];
+            const nextMesh = pageMeshes[newIndex];
+            if (!currentMesh || !nextMesh) return;
+            
+            const startRot = 0;
+            const endRot = direction === 1 ? -Math.PI : Math.PI;
+            const duration = 300;
+            const startTime = performance.now();
+            
+            currentMesh.visible = true;
+            nextMesh.visible = true;
+            nextMesh.position.z = currentMesh.position.z + pageThickness;
+            
+            function animateFlip(now) {
+                const elapsed = now - startTime;
+                let t = Math.min(1, elapsed / duration);
+                const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                const angle = startRot + (endRot - startRot) * ease;
+                currentMesh.rotation.x = angle;
+                currentMesh.position.x = -0.05 * Math.abs(angle) / Math.PI;
+                if (t >= 1) {
+                    currentMesh.rotation.x = 0;
+                    currentMesh.position.x = 0;
+                    const newZ = pageMeshes[pageMeshes.length-1].position.z + pageThickness;
+                    currentMesh.position.z = newZ;
+                    const moved = pageMeshes.splice(currentPage, 1)[0];
+                    if (direction === 1) {
+                        pageMeshes.push(moved);
+                        currentPage = newIndex;
+                    } else {
+                        pageMeshes.unshift(moved);
+                        currentPage = newIndex;
+                    }
+                    let zPos = startZ;
+                    for (let i = 0; i < pageMeshes.length; i++) {
+                        pageMeshes[i].position.z = zPos + pageThickness/2;
+                        zPos += pageThickness;
+                        pageMeshes[i].rotation.x = 0;
+                        pageMeshes[i].position.x = 0;
+                    }
+                    showPage(currentPage);
+                    return;
+                }
+                requestAnimationFrame(animateFlip);
+            }
+            requestAnimationFrame(animateFlip);
+        }
+        
+        // --- Grabbing & Lifting ---
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        let isDraggingBook = false;
+        let dragOffset = new THREE.Vector3();
         
-        function getDragPlanePoint(event) {
-            const planeY = bookGroup.position.y;
-            if (event.touches) {
-                mouse.x = (event.touches[0].clientX / renderer.domElement.clientWidth) * 2 - 1;
-                mouse.y = -(event.touches[0].clientY / renderer.domElement.clientHeight) * 2 + 1;
-            } else {
-                mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
-                mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
-            }
+        function getIntersectPoint(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            mouse.set(x, y);
             raycaster.setFromCamera(mouse, camera);
-            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), planeY);
-            const targetPoint = new THREE.Vector3();
-            if (raycaster.ray.intersectPlane(plane, targetPoint)) {
-                return targetPoint;
-            }
+            const intersects = raycaster.intersectObject(bookGroup, true);
+            if (intersects.length) return intersects[0].point;
             return null;
         }
         
-        function onPointerDown(event) {
+        function onDragStart(event) {
             event.preventDefault();
-            if (event.touches) {
-                mouse.x = (event.touches[0].clientX / renderer.domElement.clientWidth) * 2 - 1;
-                mouse.y = -(event.touches[0].clientY / renderer.domElement.clientHeight) * 2 + 1;
-            } else {
-                mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
-                mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
-            }
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(bookGroup, true);
-            if (intersects.length > 0) {
-                isGrabbed = true;
-                const hitPoint = intersects[0].point;
-                grabOffset = bookGroup.position.clone().sub(hitPoint);
+            const point = getIntersectPoint(event);
+            if (point) {
+                isDraggingBook = true;
+                dragOffset = bookGroup.position.clone().sub(point);
                 renderer.domElement.style.cursor = 'grabbing';
-                bookGroup.scale.set(1.02, 1.02, 1.02);
+                controls.enabled = false;
             }
         }
         
-        function onPointerMove(event) {
-            if (!isGrabbed) return;
-            event.preventDefault();
-            const planePoint = getDragPlanePoint(event);
-            if (planePoint) {
-                const newPos = planePoint.clone().add(grabOffset);
-                newPos.y = Math.min(1.2, Math.max(-0.2, newPos.y));
+        function onDragMove(event) {
+            if (!isDraggingBook) return;
+            const point = getIntersectPoint(event);
+            if (point) {
+                const newPos = point.clone().add(dragOffset);
+                newPos.y = Math.min(1.0, Math.max(-0.2, newPos.y));
                 bookGroup.position.copy(newPos);
             }
         }
         
-        function onPointerUp(event) {
-            if (isGrabbed) {
-                isGrabbed = false;
-                renderer.domElement.style.cursor = 'default';
-                bookGroup.scale.set(1, 1, 1);
-            }
+        function onDragEnd() {
+            isDraggingBook = false;
+            renderer.domElement.style.cursor = 'default';
+            controls.enabled = true;
         }
         
-        renderer.domElement.addEventListener('mousedown', onPointerDown);
-        window.addEventListener('mousemove', onPointerMove);
-        window.addEventListener('mouseup', onPointerUp);
-        renderer.domElement.addEventListener('touchstart', onPointerDown);
-        window.addEventListener('touchmove', onPointerMove);
-        window.addEventListener('touchend', onPointerUp);
+        renderer.domElement.addEventListener('mousedown', onDragStart);
+        window.addEventListener('mousemove', onDragMove);
+        window.addEventListener('mouseup', onDragEnd);
+        renderer.domElement.addEventListener('touchstart', (e) => { e.preventDefault(); onDragStart(e.touches[0]); });
+        window.addEventListener('touchmove', (e) => { if(isDraggingBook) { e.preventDefault(); onDragMove(e.touches[0]); } });
+        window.addEventListener('touchend', onDragEnd);
         
-        // --- Page Turning ---
-        let currentPageIndex = 0;
-        const totalPageCount = pageContents.length;
-        
-        function updatePageVisibility() {
-            for (let i = 0; i < cssLabels.length; i++) {
-                cssLabels[i].visible = (i === currentPageIndex);
-            }
-            for (let i = 0; i < pages.length; i++) {
-                pages[i].material.emissiveIntensity = (i === currentPageIndex) ? 0.15 : 0.02;
-            }
-            document.getElementById('current-page').innerText = (currentPageIndex + 1).toString();
-        }
-        
-        function turnPage(direction) {
-            let newIndex = currentPageIndex + direction;
-            if (newIndex < 0 || newIndex >= totalPageCount) return;
-            const originalRot = bookGroup.rotation.x;
-            bookGroup.rotation.x = originalRot + (direction === 1 ? -0.08 : 0.08);
-            setTimeout(() => {
-                bookGroup.rotation.x = originalRot;
-            }, 100);
-            bookGroup.scale.set(1.02, 1.02, 1.02);
-            setTimeout(() => {
-                if (!isGrabbed) bookGroup.scale.set(1, 1, 1);
-            }, 120);
-            currentPageIndex = newIndex;
-            updatePageVisibility();
-        }
+        document.getElementById('prevBtn').addEventListener('click', () => flipPage(-1));
+        document.getElementById('nextBtn').addEventListener('click', () => flipPage(1));
         
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowLeft') {
-                turnPage(-1);
-                e.preventDefault();
-            } else if (e.key === 'ArrowRight') {
-                turnPage(1);
-                e.preventDefault();
-            }
+            if (e.key === 'ArrowLeft') flipPage(-1);
+            if (e.key === 'ArrowRight') flipPage(1);
         });
         
-        // Prev/Next buttons
-        const leftBtn = document.createElement('button');
-        leftBtn.innerHTML = '◀ Prev';
-        leftBtn.style.position = 'absolute';
-        leftBtn.style.bottom = '80px';
-        leftBtn.style.left = '20px';
-        leftBtn.style.padding = '12px 18px';
-        leftBtn.style.background = '#2c1e12';
-        leftBtn.style.color = '#efdba1';
-        leftBtn.style.border = 'none';
-        leftBtn.style.borderRadius = '40px';
-        leftBtn.style.fontWeight = 'bold';
-        leftBtn.style.cursor = 'pointer';
-        leftBtn.style.zIndex = '20';
-        leftBtn.style.fontFamily = 'monospace';
-        leftBtn.style.fontSize = '14px';
-        leftBtn.style.backdropFilter = 'blur(5px)';
-        leftBtn.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
-        document.body.appendChild(leftBtn);
+        showPage(0);
         
-        const rightBtn = document.createElement('button');
-        rightBtn.innerHTML = 'Next ▶';
-        rightBtn.style.position = 'absolute';
-        rightBtn.style.bottom = '80px';
-        rightBtn.style.right = '20px';
-        rightBtn.style.padding = '12px 18px';
-        rightBtn.style.background = '#2c1e12';
-        rightBtn.style.color = '#efdba1';
-        rightBtn.style.border = 'none';
-        rightBtn.style.borderRadius = '40px';
-        rightBtn.style.fontWeight = 'bold';
-        rightBtn.style.cursor = 'pointer';
-        rightBtn.style.zIndex = '20';
-        rightBtn.style.fontFamily = 'monospace';
-        rightBtn.style.fontSize = '14px';
-        rightBtn.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
-        document.body.appendChild(rightBtn);
-        
-        leftBtn.addEventListener('click', () => turnPage(-1));
-        rightBtn.addEventListener('click', () => turnPage(1));
-        
-        // Reset button
         const resetBtn = document.createElement('button');
-        resetBtn.innerHTML = '📦 Reset Book Position';
+        resetBtn.textContent = '⟳ Reset Book';
         resetBtn.style.position = 'absolute';
         resetBtn.style.top = '20px';
         resetBtn.style.right = '20px';
-        resetBtn.style.padding = '8px 14px';
-        resetBtn.style.background = '#1f1a2e';
-        resetBtn.style.color = '#ffde9e';
-        resetBtn.style.border = '1px solid #ffb347';
+        resetBtn.style.background = '#2c1e12';
+        resetBtn.style.color = '#efdba1';
+        resetBtn.style.border = 'none';
+        resetBtn.style.padding = '8px 16px';
         resetBtn.style.borderRadius = '30px';
         resetBtn.style.cursor = 'pointer';
-        resetBtn.style.fontSize = '12px';
+        resetBtn.style.fontFamily = 'monospace';
         resetBtn.style.zIndex = '20';
-        resetBtn.style.fontFamily = 'sans-serif';
         document.body.appendChild(resetBtn);
         resetBtn.addEventListener('click', () => {
-            bookGroup.position.copy(originalBookPos);
-            bookGroup.scale.set(1, 1, 1);
-            bookGroup.rotation.x = 0;
-            bookGroup.rotation.z = 0;
+            bookGroup.position.set(0, 0.1, 0);
+            camera.position.set(3.5, 2.2, 4);
+            controls.target.set(0, 0.2, 0);
+            controls.update();
         });
         
-        // Scroll to zoom
-        renderer.domElement.addEventListener('wheel', (e) => {
-            const delta = e.deltaY * 0.005;
-            camera.position.z = Math.min(7, Math.max(2.5, camera.position.z + delta));
-            camera.position.x = Math.min(5, Math.max(-2, camera.position.x * (1 + delta*0.2)));
-            e.preventDefault();
-        }, { passive: false });
-        
-        // Initial visibility
-        updatePageVisibility();
-        
         // Floating particles
-        const particleCount = 400;
-        const particlesGeometry = new THREE.BufferGeometry();
-        const particlePositions = new Float32Array(particleCount * 3);
+        const particleGeo = new THREE.BufferGeometry();
+        const particleCount = 600;
+        const positions = new Float32Array(particleCount * 3);
         for (let i = 0; i < particleCount; i++) {
-            particlePositions[i*3] = (Math.random() - 0.5) * 12;
-            particlePositions[i*3+1] = (Math.random() - 0.5) * 3 + 0.5;
-            particlePositions[i*3+2] = (Math.random() - 0.5) * 10 - 3;
+            positions[i*3] = (Math.random() - 0.5) * 12;
+            positions[i*3+1] = (Math.random() - 0.5) * 4;
+            positions[i*3+2] = (Math.random() - 0.5) * 10 - 3;
         }
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-        const particleMat = new THREE.PointsMaterial({ color: 0xffaa66, size: 0.03, transparent: true, opacity: 0.5 });
-        const particles = new THREE.Points(particlesGeometry, particleMat);
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const particleMat = new THREE.PointsMaterial({ color: 0xffaa77, size: 0.03, transparent: true, opacity: 0.4 });
+        const particles = new THREE.Points(particleGeo, particleMat);
         scene.add(particles);
         
         function animateParticles() {
@@ -451,17 +468,9 @@
         }
         animateParticles();
         
-        // --- Render Loop ---
         function animate() {
-            if (!isGrabbed) {
-                const time = Date.now() * 0.002;
-                if (bookGroup.position.y < 0.25 && bookGroup.position.y > -0.1) {
-                    bookGroup.position.y = originalBookPos.y + Math.sin(time) * 0.003;
-                }
-            }
-            camera.lookAt(bookGroup.position);
+            controls.update();
             renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
             requestAnimationFrame(animate);
         }
         animate();
@@ -471,13 +480,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
         }
-        
-        bookGroup.rotation.z = -0.03;
-        bookGroup.rotation.x = 0.05;
-        
-        console.log("3D Book Ready — Grab & Lift, Turn Pages!");
     </script>
 </body>
 </html>
